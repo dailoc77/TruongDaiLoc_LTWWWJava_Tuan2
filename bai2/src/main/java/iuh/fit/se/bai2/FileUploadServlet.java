@@ -12,44 +12,61 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-@MultipartConfig
+@MultipartConfig(
+        fileSizeThreshold = 1024 * 1024,
+        maxFileSize = 50 * 1024 * 1024,
+        maxRequestSize = 200 * 1024 * 1024
+)
 public class FileUploadServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String uploadsPath = getServletContext().getRealPath("/WEB-INF/uploads");
-        File uploads = new File(uploadsPath);
-        if (!uploads.exists()) uploads.mkdirs();
+        resp.setContentType("text/plain; charset=UTF-8");
 
-        System.out.println("Upload folder: " + uploads.getAbsolutePath());
-
-        boolean fileSaved = false;
-
-        // Debug: Print all part names
-        for (Part part : req.getParts()) {
-            System.out.println("Part name: " + part.getName() + ", size: " + part.getSize());
+        String ct = req.getContentType();
+        if (ct == null || !ct.toLowerCase().startsWith("multipart/")) {
+            resp.getWriter().println("Invalid request (not multipart)");
+            return;
         }
 
+        String uploadsPath = getServletContext().getRealPath("/WEB-INF/uploads");
+        File uploadsDir = new File(uploadsPath);
+        if (!uploadsDir.exists()) uploadsDir.mkdirs();
+
+        int saved = 0;
         for (Part part : req.getParts()) {
-            if (part.getName().equals("file") && part.getSize() > 0) {
-                String filename = part.getSubmittedFileName();
-                File outFile = new File(uploads, filename);
-                try (InputStream fileContent = part.getInputStream();
-                     FileOutputStream out = new FileOutputStream(outFile)) {
-                    fileContent.transferTo(out);
-                    fileSaved = true;
-                    System.out.println("Saved file: " + outFile.getAbsolutePath());
-                } catch (Exception ex) {
-                    System.err.println("Error saving file: " + ex.getMessage());
-                    resp.getWriter().println("Error saving file: " + ex.getMessage());
-                    return;
-                }
+            if (!"file".equals(part.getName())) continue;
+            if (part.getSize() <= 0) continue; // empty or no selection
+            String submitted = part.getSubmittedFileName();
+            if (submitted == null || submitted.isBlank()) continue;
+            String safe = submitted.replaceAll("[\\\\/]+", "_");
+            File target = resolveUnique(new File(uploadsDir, safe));
+            try (InputStream in = part.getInputStream(); FileOutputStream out = new FileOutputStream(target)) {
+                in.transferTo(out);
+                saved++;
+                System.out.println("Saved file: " + target.getAbsolutePath() + " (" + target.length() + " bytes)");
             }
         }
-        if (fileSaved) {
-            resp.getWriter().println("Files uploaded successfully");
+
+        if (saved > 0) {
+            resp.getWriter().println("Uploaded " + saved + " file(s).");
         } else {
-            resp.getWriter().println("No file uploaded or file part not found.");
+            resp.getWriter().println("No file uploaded.");
+        }
+    }
+
+    private File resolveUnique(File base) {
+        if (!base.exists()) return base;
+        String name = base.getName();
+        int dot = name.lastIndexOf('.');
+        String baseName = (dot == -1) ? name : name.substring(0, dot);
+        String ext = (dot == -1) ? "" : name.substring(dot);
+        int i = 1;
+        File parent = base.getParentFile();
+        while (true) {
+            File cand = new File(parent, baseName + "(" + i + ")" + ext);
+            if (!cand.exists()) return cand;
+            i++;
         }
     }
 }
