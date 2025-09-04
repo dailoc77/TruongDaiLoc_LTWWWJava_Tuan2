@@ -9,6 +9,11 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 
+
+/**
+ @author DAILOC
+ * */
+
 @WebServlet(name = "messageServlet", value = "/message")
 public class MessageServlet extends HttpServlet {
 
